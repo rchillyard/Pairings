@@ -4,28 +4,48 @@
 
 package com.phasmidsoftware.pairings
 
-import com.phasmidsoftware.parse._
-import com.phasmidsoftware.table._
+import com.phasmidsoftware.parse.{CellParser, TableParserHelper}
+import com.phasmidsoftware.table.{Header, Table}
 import scala.util.{Success, Try}
+import spray.json.{DefaultJsonProtocol, RootJsonFormat, enrichAny}
 
 /**
- * Main Application which reads a CSV file of player names, then forms partnerships by pairing
- * the odd-numbered lines with the even-numbered lines..
+ * Pairings is an application which reads a CSV file and outputs JSON.
  *
- * These pairings are then converted to the format required by the Shark Bridge Teacher Console.
+ * The application reads a CSV file of player names, then forms partnerships by pairing
+ * the odd-numbered lines with the even-numbered lines.
  *
- * The input file is expected to have a header row with at least "first" and "last" columns.
+ * As written, it is expected that
+ * the input file has a header row with at least "first" and "last" columns.
+ * However, it is easy to switch to a programmed header--see the definition of TableParserHelper.
+ *
+ * Partnerships are then converted to a "Partnerships" object (as specified by the Shark Bridge Teacher Console API)
+ * and so to JSON which is output to the outputFile.
+ *
  */
 object Pairings extends App {
 
-    println(s"CsvToJSON ${args.headOption.getOrElse("")}")
+    val version = "0.0.2"
 
-    val (inputFile, outputFile) = getFileNames("Documents", "partnerships")
-    val pty: Try[Table[Player]] = Table.parse[Table[Player]](scala.io.Source.fromFile(inputFile))
-    val tsy: Try[Iterator[Partnership]] = for (pss <- for (pt <- pty) yield pt.rows grouped 2) yield for (ps <- pss) yield Partnership(ps)
-    val sy: Try[Partnerships] = for (ts <- tsy) yield Partnerships((for (t <- ts) yield t.asArray).toArray)
-    sy.foreach(w => println(s"${w.size} partnerships read from $inputFile"))
-    (sy map (_.prettyPrint)).transform(outputPairingString, e => Success(System.err.println(e.getLocalizedMessage)))
+    private val wo: Option[String] = args.headOption
+    println(s"Pairings ${wo.getOrElse("")}")
+    println(s"Version: $version")
+
+    private val (inputFile, outputFile) = getFileNames("Documents", wo.getOrElse("partnerships"))
+    private val pty = Table.parse[Table[Player]](scala.io.Source.fromFile(inputFile))
+    private val zy = pty map convertToPartnerships
+    private val wy = zy map Partnerships.toJsonPretty
+    wy.transform(outputPairingString, processException)
+
+    // TODO would normally be private but is required by unit tests.
+    def convertToPartnerships(pt: Table[Player]): Partnerships = {
+        println(s"${pt.size} players read")
+        val duplicates = for ((_, v) <- pt.toSeq.groupBy(_.nickname); if v.length > 1; p <- v) yield p
+        if (duplicates.nonEmpty) throw PairingsException(s"Duplicate player nicknames for: $duplicates")
+        val ts = Player.convertTable(pt)
+        println(s"transformed into ${ts.size} partnerships")
+        Partnerships.create(Partnership.convertTable(ts))
+    }
 
     private def outputPairingString(w: String): Try[Unit] = {
         import java.io.PrintWriter
@@ -36,9 +56,13 @@ object Pairings extends App {
         Success(())
     }
 
-    private def getFileNames(baseDirectory: String, defaultBaseName: String): (String, String) = {
+    private def processException(e: Throwable): Try[Unit] = e match {
+        case PairingsException(m) => Success(System.err.println(m))
+        case _ => Success(e.printStackTrace(System.err))
+    }
+
+    private def getFileNames(baseDirectory: String, baseName: String): (String, String) = {
         val userHome = System.getProperty("user.home")
-        val baseName = if (args.length > 0) args.head else defaultBaseName
         val inputFile = s"$userHome/$baseDirectory/$baseName.csv"
         val outputFile = s"$userHome/$baseDirectory/$baseName.json"
         (inputFile, outputFile)
@@ -59,7 +83,19 @@ case class Player(first: String, last: String) {
  * Companion object for Player.
  */
 object Player extends TableParserHelper[Player]() {
-    def cellParser: CellParser[Player] = cellParser2(apply)
+    lazy val cellParser: CellParser[Player] = cellParser2(apply)
+
+    /**
+     * Method to transform a Table[Player] into a Table[Partnership].
+     *
+     * The requirements of the application are that the rows of the Player table are grouped by twos
+     * and each resulting entity (an array of length 2) is taken to form a Partnership.
+     *
+     * @param pt a Table[Player]
+     * @return a Table[Partnership]
+     */
+    def convertTable(pt: Table[Player]): Table[Partnership] = pt.processRows(xs => (xs grouped 2).toSeq).flatMap(Partnership.create).
+            replaceHeader(Some(Header.create("playerA", "playerB")))
 }
 
 /**
@@ -68,9 +104,7 @@ object Player extends TableParserHelper[Player]() {
  * @param playerA the first player.
  * @param playerB the second player.
  */
-case class Partnership(playerA: String, playerB: String) {
-    def asArray: Array[String] = Array(playerA, playerB)
-}
+case class Partnership(playerA: String, playerB: String)
 
 /**
  * Companion object to Partnership.
@@ -82,33 +116,36 @@ object Partnership {
      * @param players the sequence of Players. Whatever length is given, we will use the nicknames of the first and last.
      * @return a Partnership.
      */
-    def apply(players: Seq[Player]): Partnership = Partnership(players.head.nickname, players.last.nickname)
-}
-
-/**
- * A case class representing all Partnerships as an Array of Array of String.
- * This is the structure required by the Shark Bridge app.
- *
- * @param partnerships an Array of two-element Arrays of Strings.
- */
-case class Partnerships(partnerships: Array[Array[String]]) {
-    def size: Int = partnerships.length
+    def create(players: Iterable[Player]): Option[Partnership] =
+        players.tail.headOption map (p => Partnership(players.head.nickname, p.nickname))
 
     /**
-     * Method to output these Partnerships as a Json String.
+     * Method to transform a Table[Player] into a Table[PartnershipAsArray].
      *
-     * @return a String with some embedded newlines.
+     * The requirements of the application are that the player names are grouped as an array.
+     *
+     * @param pt a Table[Partnership]
+     * @return a Table[PartnershipAsArray]
      */
-    def prettyPrint: String = Partnerships.prettyPrint(this)
+    def convertTable(pt: Table[Partnership]): Table[PartnershipAsArray] = pt.map(p => PartnershipAsArray(Array(p.playerA, p.playerB)))
 }
 
-import spray.json.{DefaultJsonProtocol, RootJsonFormat, enrichAny}
+case class PartnershipAsArray(pair: Array[String])
 
 /**
- * Companion object for Partnerships.
+ * Partnerships is a case class that corresponds to the way that the JSON Output for this application is defined.
+ *
+ * @param partnerships an Array of Array of String.
  */
-object Partnerships extends DefaultJsonProtocol {
-    implicit val partnershipsFormat: RootJsonFormat[Partnerships] = jsonFormat1(apply)
+case class Partnerships(partnerships: Array[Array[String]])
 
-    def prettyPrint(p: Partnerships): String = p.toJson.prettyPrint
+object Partnerships extends DefaultJsonProtocol {
+
+    implicit val partnershipsFormat: RootJsonFormat[Partnerships] = jsonFormat1(Partnerships.apply)
+
+    def toJsonPretty(partnerships: Partnerships): String = partnerships.toJson.prettyPrint
+
+    def create(t: Table[PartnershipAsArray]): Partnerships = Partnerships(for (r <- t.rows.toArray) yield r.pair)
 }
+
+case class PairingsException(m: String) extends Exception(m)
