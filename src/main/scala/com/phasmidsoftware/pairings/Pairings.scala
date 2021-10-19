@@ -4,8 +4,9 @@
 
 package com.phasmidsoftware.pairings
 
-import com.phasmidsoftware.parse._
-import com.phasmidsoftware.table._
+import com.phasmidsoftware.parse.{CellParser, TableParserHelper}
+import com.phasmidsoftware.table.Table
+
 import scala.util.{Success, Try}
 
 /**
@@ -22,7 +23,7 @@ object Pairings extends App {
 
     val (inputFile, outputFile) = getFileNames("Documents", "partnerships")
     val pty: Try[Table[Player]] = Table.parse[Table[Player]](scala.io.Source.fromFile(inputFile))
-    val tsy: Try[Iterator[Partnership]] = for (pss <- for (pt <- pty) yield pt.rows grouped 2) yield for (ps <- pss) yield Partnership(ps)
+    val tsy: Try[Iterator[Partnership]] = for (pss <- for (pt <- pty) yield pt.rows grouped 2) yield for (ps <- pss) yield Partnership(ps.toSeq)
     val sy: Try[Partnerships] = for (ts <- tsy) yield Partnerships((for (t <- ts) yield t.asArray).toArray)
     sy.foreach(w => println(s"${w.size} partnerships read from $inputFile"))
     (sy map (_.prettyPrint)).transform(outputPairingString, e => Success(System.err.println(e.getLocalizedMessage)))

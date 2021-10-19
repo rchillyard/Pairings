@@ -13,6 +13,6 @@ resolvers += "Typesafe Repository" at "https://repo.typesafe.com/typesafe/releas
 lazy val scalaTestVersion = "3.1.1"
 
 libraryDependencies ++= Seq(
-    "com.phasmidsoftware" %%  "tableparser" % "1.0.11-SNAPSHOT",
+    "com.phasmidsoftware" %%  "tableparser" % "1.0.13",
     "org.scalatest" %% "scalatest" % scalaTestVersion % "test"
 )
