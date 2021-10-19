@@ -2,7 +2,7 @@ organization := "com.phasmidsoftware"
 
 name := "Pairings"
 
-version := "0.0.1"
+version := "0.0.3"
 
 scalaVersion := "2.13.3"
 
@@ -14,5 +14,6 @@ lazy val scalaTestVersion = "3.1.1"
 
 libraryDependencies ++= Seq(
     "com.phasmidsoftware" %%  "tableparser" % "1.0.13",
+    "ch.qos.logback" % "logback-classic" % "1.2.3",
     "org.scalatest" %% "scalatest" % scalaTestVersion % "test"
 )
