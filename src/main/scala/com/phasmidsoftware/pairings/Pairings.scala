@@ -6,8 +6,9 @@ package com.phasmidsoftware.pairings
 
 import com.phasmidsoftware.parse.{CellParser, TableParserHelper}
 import com.phasmidsoftware.table.{Header, Table}
-import scala.util.{Success, Try}
 import spray.json.{DefaultJsonProtocol, RootJsonFormat, enrichAny}
+
+import scala.util.{Success, Try}
 
 /**
  * Pairings is an application which reads a CSV file and outputs JSON.
@@ -25,7 +26,7 @@ import spray.json.{DefaultJsonProtocol, RootJsonFormat, enrichAny}
  */
 object Pairings extends App {
 
-    val version = "0.0.2"
+    val version = "0.0.4"
 
     private val wo: Option[String] = args.headOption
     println(s"Pairings ${wo.getOrElse("")}")
